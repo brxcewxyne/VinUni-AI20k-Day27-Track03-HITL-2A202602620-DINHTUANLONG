@@ -51,7 +51,15 @@ async def _recent_sessions() -> list[dict]:
         async with conn.execute(
             """
             SELECT thread_id, pr_url,
-                   MAX(risk_level) AS worst_risk,
+                   CASE MAX(CASE risk_level
+                                WHEN 'high' THEN 3
+                                WHEN 'med'  THEN 2
+                                ELSE 1
+                            END)
+                        WHEN 3 THEN 'high'
+                        WHEN 2 THEN 'med'
+                        ELSE 'low'
+                   END             AS worst_risk,
                    MAX(timestamp)  AS last_event,
                    COUNT(*)        AS events
               FROM audit_events

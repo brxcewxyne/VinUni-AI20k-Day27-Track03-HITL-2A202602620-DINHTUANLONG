@@ -368,7 +368,27 @@ async def run(pr_url: str, thread_id: str | None):
         app = build_graph(cp)
         cfg = {"configurable": {"thread_id": thread_id}}
 
-        result = await app.ainvoke({"pr_url": pr_url, "thread_id": thread_id}, cfg)
+        state = await app.aget_state(cfg)
+        if state.next:
+            payload = None
+            for task in state.tasks:
+                if task.interrupts:
+                    payload = task.interrupts[0].value
+                    break
+            if payload is None:
+                raise RuntimeError(
+                    f"Thread {thread_id} is paused but no interrupt payload was found"
+                )
+            console.print("[dim]Resuming the paused session from the SQLite checkpoint...[/dim]")
+            result = await app.ainvoke(Command(resume=handle_interrupt(payload)), cfg)
+        elif state.values:
+            console.print("[green]✓[/green] Session already completed — nothing was re-run")
+            console.print(f"final_action = {state.values.get('final_action')}")
+            console.print(f"\n[dim]Replay:[/dim] uv run python -m audit.replay --thread {thread_id}")
+            return
+        else:
+            result = await app.ainvoke({"pr_url": pr_url, "thread_id": thread_id}, cfg)
+
         while "__interrupt__" in result:
             payload = result["__interrupt__"][0].value
             result = await app.ainvoke(Command(resume=handle_interrupt(payload)), cfg)
